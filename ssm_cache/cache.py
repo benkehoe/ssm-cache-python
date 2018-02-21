@@ -36,17 +36,27 @@ class SSMParameterGroup(Refreshable):
     def __init__(self, max_age=None):
         super(SSMParameterGroup, self).__init__(max_age)
         
-        self._parameters = []
+        self._parameters = {}
     
     def parameter(self, *args, **kwargs):
+        if 'max_age' in kwargs:
+            raise ValueError("max_age can't be set individually for grouped parameters")
         parameter = SSMParameter(*args, **kwargs)
         parameter._group = self
-        self._parameters.append(parameter)
+        self._parameters[parameter._name] = parameter
         return parameter
     
     def _refresh(self):
-        for param in self._parameters:
-            param._refresh()
+        #do a batch get
+        with_decryption = any(p._with_decryption for p in six.itervalues(self._parameters))
+        names = [p._name for p in six.itervalues(self._parameters)]
+        response = self.get_ssm_client().get_parameters(
+            Names=names,
+            WithDecryption=with_decryption,
+        )
+        for item in response['Parameters']:
+            self._parameters[item['Name']]._value = item['Value']
+        self._value = response['Parameters']['Value']
 
 class SSMParameter(Refreshable):
     """ The class wraps an SSM Parameter and adds optional caching """
@@ -80,7 +90,6 @@ class SSMParameter(Refreshable):
             Names=[self._name],
             WithDecryption=self._with_decryption,
         )
-        # create a dict of name:value for each param
         self._value = response['Parameters']['Value']
         
     @property
@@ -116,7 +125,8 @@ class SSMParameter(Refreshable):
                     self.refresh()
                     if callable(error_callback):
                         error_callback()
-                    kwargs[retry_argument] = True
+                    if retry_argument:
+                        kwargs[retry_argument] = True
                     return func(*args, **kwargs)
             return wrapped
         return true_decorator

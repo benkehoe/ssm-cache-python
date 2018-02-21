@@ -43,6 +43,10 @@ class SSMParameterGroup(Refreshable):
         parameter._group = self
         self._parameters.append(parameter)
         return parameter
+    
+    def _refresh(self):
+        for param in self._parameters:
+            param._refresh()
 
 class SSMParameter(Refreshable):
     """ The class wraps an SSM Parameter and adds optional caching """
@@ -79,7 +83,11 @@ class SSMParameter(Refreshable):
         # create a dict of name:value for each param
         self._value = response['Parameters']['Value']
         
+    @property
+    def name(self):
+        return self.name
 
+    @property
     def value(self):
         """
             Retrieve the value of a given param name.
